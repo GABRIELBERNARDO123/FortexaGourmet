@@ -1,36 +1,76 @@
-version: '3.8'
+name: fortexa-gourmet
 
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: fortexa_gourmet
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+  caddy:
+    image: caddy:2.7-alpine
+    container_name: fortexa_caddy
+    restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-      - pgdata:/var/lib/postgresql/data
-
-  api:
-    build: ./api
-    ports:
-      - "8001:8001"
-    depends_on:
-      - db
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./public:/srv/public:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs/caddy:/var/log/caddy
     environment:
-      DB_HOST: db
-      DB_NAME: fortexa_gourmet
-      DB_USER: postgres
-      DB_PASS: postgres
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3002:80"
+      - DOMAIN=${DOMAIN}
+    networks:
+      - fortexa_net
     depends_on:
-      - api
+      - php
+
+  php:
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+    container_name: fortexa_php
+    restart: unless-stopped
+    volumes:
+      - ./app:/var/www/app
+      - ./public:/var/www/public
+      - ./database:/var/www/database
+      - ./logs/php:/var/log/php
+    environment:
+      - APP_ENV=${APP_ENV}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - APP_KEY=${APP_KEY}
+    networks:
+      - fortexa_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: fortexa_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fortexa_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  pgdata:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  fortexa_net:
+    driver: bridge

@@ -1,0 +1,45 @@
+
+{
+    servers {
+        trusted_proxies static private_ranges
+    }
+}
+
+{$DOMAIN} {
+    root * /srv/public
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';"
+        -Server
+    }
+
+    handle /api/* {
+        rewrite * /api/index.php
+        php_fastcgi php:9000 {
+            root /var/www/public
+        }
+    }
+
+    handle {
+        try_files {path} {path}/ /index.html
+        file_server
+    }
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+    }
+
+    handle_errors {
+        respond "{err.status_code} {err.status_text}" {err.status_code}
+    }
+}
